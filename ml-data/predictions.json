@@ -1,0 +1,498 @@
+[
+  {
+    "product_id": "P0012",
+    "product_name": "Sprite",
+    "category": "Beverages",
+    "unit_price": 12.95,
+    "current_stock": 5,
+    "predicted_daily_demand": 34.08000183105469
+  },
+  {
+    "product_id": "P0043",
+    "product_name": "Plastic Bags",
+    "category": "Street Essentials",
+    "unit_price": 13.76,
+    "current_stock": 18,
+    "predicted_daily_demand": 32.59000015258789
+  },
+  {
+    "product_id": "P0060",
+    "product_name": "Sunglasses",
+    "category": "Street Accessories",
+    "unit_price": 30.78,
+    "current_stock": 6,
+    "predicted_daily_demand": 31.530000686645508
+  },
+  {
+    "product_id": "P0046",
+    "product_name": "Soap",
+    "category": "Personal Care",
+    "unit_price": 5.94,
+    "current_stock": 96,
+    "predicted_daily_demand": 32.2400016784668
+  },
+  {
+    "product_id": "P0001",
+    "product_name": "Fat Cake",
+    "category": "Street Foods",
+    "unit_price": 15.97,
+    "current_stock": 130,
+    "predicted_daily_demand": 33.310001373291016
+  },
+  {
+    "product_id": "P0002",
+    "product_name": "Vetkoek",
+    "category": "Street Foods",
+    "unit_price": 25.97,
+    "current_stock": 35,
+    "predicted_daily_demand": 33.63999938964844
+  },
+  {
+    "product_id": "P0003",
+    "product_name": "Kota",
+    "category": "Street Foods",
+    "unit_price": 7.55,
+    "current_stock": 164,
+    "predicted_daily_demand": 33.52000045776367
+  },
+  {
+    "product_id": "P0004",
+    "product_name": "Bunny Chow",
+    "category": "Street Foods",
+    "unit_price": 3.96,
+    "current_stock": 171,
+    "predicted_daily_demand": 33.40999984741211
+  },
+  {
+    "product_id": "P0005",
+    "product_name": "Chicken Feet",
+    "category": "Street Foods",
+    "unit_price": 21.44,
+    "current_stock": 133,
+    "predicted_daily_demand": 33.31999969482422
+  },
+  {
+    "product_id": "P0006",
+    "product_name": "Pap and Wors",
+    "category": "Street Foods",
+    "unit_price": 2.67,
+    "current_stock": 335,
+    "predicted_daily_demand": 33.41999816894531
+  },
+  {
+    "product_id": "P0007",
+    "product_name": "Boiled Eggs",
+    "category": "Street Foods",
+    "unit_price": 29.66,
+    "current_stock": 120,
+    "predicted_daily_demand": 33.349998474121094
+  },
+  {
+    "product_id": "P0008",
+    "product_name": "Russian Sausage",
+    "category": "Street Foods",
+    "unit_price": 8.07,
+    "current_stock": 184,
+    "predicted_daily_demand": 33.459999084472656
+  },
+  {
+    "product_id": "P0009",
+    "product_name": "Grilled Chicken",
+    "category": "Street Foods",
+    "unit_price": 13.49,
+    "current_stock": 369,
+    "predicted_daily_demand": 33.279998779296875
+  },
+  {
+    "product_id": "P0010",
+    "product_name": "Fish and Chips",
+    "category": "Street Foods",
+    "unit_price": 16.19,
+    "current_stock": 110,
+    "predicted_daily_demand": 33.310001373291016
+  },
+  {
+    "product_id": "P0011",
+    "product_name": "Coca-Cola",
+    "category": "Beverages",
+    "unit_price": 21.92,
+    "current_stock": 319,
+    "predicted_daily_demand": 34.08000183105469
+  },
+  {
+    "product_id": "P0013",
+    "product_name": "Fanta",
+    "category": "Beverages",
+    "unit_price": 18.02,
+    "current_stock": 272,
+    "predicted_daily_demand": 34.34000015258789
+  },
+  {
+    "product_id": "P0014",
+    "product_name": "Pepsi",
+    "category": "Beverages",
+    "unit_price": 8.44,
+    "current_stock": 274,
+    "predicted_daily_demand": 34.189998626708984
+  },
+  {
+    "product_id": "P0015",
+    "product_name": "Still Water",
+    "category": "Beverages",
+    "unit_price": 21.95,
+    "current_stock": 164,
+    "predicted_daily_demand": 34.08000183105469
+  },
+  {
+    "product_id": "P0016",
+    "product_name": "Liqui Fruit",
+    "category": "Beverages",
+    "unit_price": 22.95,
+    "current_stock": 342,
+    "predicted_daily_demand": 34.189998626708984
+  },
+  {
+    "product_id": "P0017",
+    "product_name": "Cappy",
+    "category": "Beverages",
+    "unit_price": 4.45,
+    "current_stock": 182,
+    "predicted_daily_demand": 34.25
+  },
+  {
+    "product_id": "P0018",
+    "product_name": "Mageu",
+    "category": "Beverages",
+    "unit_price": 34.58,
+    "current_stock": 188,
+    "predicted_daily_demand": 34.2599983215332
+  },
+  {
+    "product_id": "P0019",
+    "product_name": "Amasi",
+    "category": "Beverages",
+    "unit_price": 12.29,
+    "current_stock": 57,
+    "predicted_daily_demand": 34.20000076293945
+  },
+  {
+    "product_id": "P0020",
+    "product_name": "Dragon Energy",
+    "category": "Beverages",
+    "unit_price": 27.06,
+    "current_stock": 174,
+    "predicted_daily_demand": 34.45000076293945
+  },
+  {
+    "product_id": "P0021",
+    "product_name": "Simba Chips",
+    "category": "Snacks",
+    "unit_price": 5.83,
+    "current_stock": 208,
+    "predicted_daily_demand": 31.690000534057617
+  },
+  {
+    "product_id": "P0022",
+    "product_name": "Nik Naks",
+    "category": "Snacks",
+    "unit_price": 3.21,
+    "current_stock": 340,
+    "predicted_daily_demand": 32.22999954223633
+  },
+  {
+    "product_id": "P0023",
+    "product_name": "Popcorn",
+    "category": "Snacks",
+    "unit_price": 11.12,
+    "current_stock": 383,
+    "predicted_daily_demand": 31.540000915527344
+  },
+  {
+    "product_id": "P0024",
+    "product_name": "Peanuts",
+    "category": "Snacks",
+    "unit_price": 13.4,
+    "current_stock": 357,
+    "predicted_daily_demand": 31.43000030517578
+  },
+  {
+    "product_id": "P0025",
+    "product_name": "Bakers Biscuits",
+    "category": "Snacks",
+    "unit_price": 19.55,
+    "current_stock": 135,
+    "predicted_daily_demand": 31.440000534057617
+  },
+  {
+    "product_id": "P0026",
+    "product_name": "Fizzers",
+    "category": "Snacks",
+    "unit_price": 36.87,
+    "current_stock": 148,
+    "predicted_daily_demand": 31.84000015258789
+  },
+  {
+    "product_id": "P0027",
+    "product_name": "Bubble Gum",
+    "category": "Snacks",
+    "unit_price": 34.53,
+    "current_stock": 370,
+    "predicted_daily_demand": 31.510000228881836
+  },
+  {
+    "product_id": "P0028",
+    "product_name": "Biltong",
+    "category": "Snacks",
+    "unit_price": 24.54,
+    "current_stock": 367,
+    "predicted_daily_demand": 31.6200008392334
+  },
+  {
+    "product_id": "P0029",
+    "product_name": "Apples",
+    "category": "Fresh Produce",
+    "unit_price": 5.03,
+    "current_stock": 393,
+    "predicted_daily_demand": 29.450000762939453
+  },
+  {
+    "product_id": "P0030",
+    "product_name": "Bananas",
+    "category": "Fresh Produce",
+    "unit_price": 3.26,
+    "current_stock": 379,
+    "predicted_daily_demand": 30.1299991607666
+  },
+  {
+    "product_id": "P0031",
+    "product_name": "Oranges",
+    "category": "Fresh Produce",
+    "unit_price": 16.35,
+    "current_stock": 375,
+    "predicted_daily_demand": 29.610000610351562
+  },
+  {
+    "product_id": "P0032",
+    "product_name": "Mangoes",
+    "category": "Fresh Produce",
+    "unit_price": 31.08,
+    "current_stock": 62,
+    "predicted_daily_demand": 29.56999969482422
+  },
+  {
+    "product_id": "P0033",
+    "product_name": "Grapes",
+    "category": "Fresh Produce",
+    "unit_price": 11.07,
+    "current_stock": 121,
+    "predicted_daily_demand": 29.670000076293945
+  },
+  {
+    "product_id": "P0034",
+    "product_name": "Avocados",
+    "category": "Fresh Produce",
+    "unit_price": 6.36,
+    "current_stock": 291,
+    "predicted_daily_demand": 29.559999465942383
+  },
+  {
+    "product_id": "P0035",
+    "product_name": "Pineapples",
+    "category": "Fresh Produce",
+    "unit_price": 4.48,
+    "current_stock": 80,
+    "predicted_daily_demand": 29.110000610351562
+  },
+  {
+    "product_id": "P0036",
+    "product_name": "Burger",
+    "category": "Fast Food",
+    "unit_price": 27.38,
+    "current_stock": 123,
+    "predicted_daily_demand": 34.86000061035156
+  },
+  {
+    "product_id": "P0037",
+    "product_name": "Hot Dog",
+    "category": "Fast Food",
+    "unit_price": 2.19,
+    "current_stock": 248,
+    "predicted_daily_demand": 35.11000061035156
+  },
+  {
+    "product_id": "P0038",
+    "product_name": "French Fries",
+    "category": "Fast Food",
+    "unit_price": 24.73,
+    "current_stock": 182,
+    "predicted_daily_demand": 34.7400016784668
+  },
+  {
+    "product_id": "P0039",
+    "product_name": "Chicken Burger",
+    "category": "Fast Food",
+    "unit_price": 29.47,
+    "current_stock": 121,
+    "predicted_daily_demand": 34.56999969482422
+  },
+  {
+    "product_id": "P0040",
+    "product_name": "Beef Burger",
+    "category": "Fast Food",
+    "unit_price": 15.41,
+    "current_stock": 377,
+    "predicted_daily_demand": 34.4900016784668
+  },
+  {
+    "product_id": "P0041",
+    "product_name": "Pizza Slice",
+    "category": "Fast Food",
+    "unit_price": 32.77,
+    "current_stock": 105,
+    "predicted_daily_demand": 34.529998779296875
+  },
+  {
+    "product_id": "P0042",
+    "product_name": "Tissues",
+    "category": "Street Essentials",
+    "unit_price": 13.05,
+    "current_stock": 247,
+    "predicted_daily_demand": 32.58000183105469
+  },
+  {
+    "product_id": "P0044",
+    "product_name": "Paper Plates",
+    "category": "Street Essentials",
+    "unit_price": 26.42,
+    "current_stock": 375,
+    "predicted_daily_demand": 33.15999984741211
+  },
+  {
+    "product_id": "P0045",
+    "product_name": "Plastic Cups",
+    "category": "Street Essentials",
+    "unit_price": 31.34,
+    "current_stock": 238,
+    "predicted_daily_demand": 32.779998779296875
+  },
+  {
+    "product_id": "P0047",
+    "product_name": "Toothpaste",
+    "category": "Personal Care",
+    "unit_price": 29.06,
+    "current_stock": 335,
+    "predicted_daily_demand": 32.220001220703125
+  },
+  {
+    "product_id": "P0048",
+    "product_name": "Toothbrush",
+    "category": "Personal Care",
+    "unit_price": 29.07,
+    "current_stock": 226,
+    "predicted_daily_demand": 32.220001220703125
+  },
+  {
+    "product_id": "P0049",
+    "product_name": "Sanitary Pads",
+    "category": "Personal Care",
+    "unit_price": 20.9,
+    "current_stock": 346,
+    "predicted_daily_demand": 32.15999984741211
+  },
+  {
+    "product_id": "P0050",
+    "product_name": "Phone Charger",
+    "category": "Mobile Accessories",
+    "unit_price": 2.65,
+    "current_stock": 114,
+    "predicted_daily_demand": 32.34000015258789
+  },
+  {
+    "product_id": "P0051",
+    "product_name": "Earphones",
+    "category": "Mobile Accessories",
+    "unit_price": 2.8,
+    "current_stock": 341,
+    "predicted_daily_demand": 32.34000015258789
+  },
+  {
+    "product_id": "P0052",
+    "product_name": "USB Cable",
+    "category": "Mobile Accessories",
+    "unit_price": 13.82,
+    "current_stock": 108,
+    "predicted_daily_demand": 31.56999969482422
+  },
+  {
+    "product_id": "P0053",
+    "product_name": "Power Bank",
+    "category": "Mobile Accessories",
+    "unit_price": 31.13,
+    "current_stock": 242,
+    "predicted_daily_demand": 31.6200008392334
+  },
+  {
+    "product_id": "P0054",
+    "product_name": "Doughnut",
+    "category": "Street Sweets",
+    "unit_price": 15.77,
+    "current_stock": 321,
+    "predicted_daily_demand": 28.31999969482422
+  },
+  {
+    "product_id": "P0055",
+    "product_name": "Ice Lolly",
+    "category": "Street Sweets",
+    "unit_price": 9.55,
+    "current_stock": 307,
+    "predicted_daily_demand": 28.610000610351562
+  },
+  {
+    "product_id": "P0056",
+    "product_name": "Candy Floss",
+    "category": "Street Sweets",
+    "unit_price": 11.13,
+    "current_stock": 58,
+    "predicted_daily_demand": 28.469999313354492
+  },
+  {
+    "product_id": "P0057",
+    "product_name": "Cupcake",
+    "category": "Street Sweets",
+    "unit_price": 33.55,
+    "current_stock": 297,
+    "predicted_daily_demand": 28.440000534057617
+  },
+  {
+    "product_id": "P0058",
+    "product_name": "Sweets",
+    "category": "Street Sweets",
+    "unit_price": 25.55,
+    "current_stock": 282,
+    "predicted_daily_demand": 28.760000228881836
+  },
+  {
+    "product_id": "P0059",
+    "product_name": "Caps",
+    "category": "Street Accessories",
+    "unit_price": 29.89,
+    "current_stock": 90,
+    "predicted_daily_demand": 31.530000686645508
+  },
+  {
+    "product_id": "P0061",
+    "product_name": "Wallets",
+    "category": "Street Accessories",
+    "unit_price": 28.1,
+    "current_stock": 165,
+    "predicted_daily_demand": 31.639999389648438
+  },
+  {
+    "product_id": "P0062",
+    "product_name": "Key Holders",
+    "category": "Street Accessories",
+    "unit_price": 13.01,
+    "current_stock": 75,
+    "predicted_daily_demand": 31.530000686645508
+  }
+]

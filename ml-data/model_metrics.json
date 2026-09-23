@@ -1,0 +1,22 @@
+{
+  "Linear Regression": {
+    "mae": 4.82,
+    "rmse": 5.94,
+    "r2": 0.71
+  },
+  "Decision Tree": {
+    "mae": 3.15,
+    "rmse": 4.27,
+    "r2": 0.85
+  },
+  "Random Forest": {
+    "mae": 2.31,
+    "rmse": 3.08,
+    "r2": 0.92
+  },
+  "XGBoost": {
+    "mae": 1.8,
+    "rmse": 2.1,
+    "r2": 0.97
+  }
+}
