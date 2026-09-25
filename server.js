@@ -1,4 +1,4 @@
-// server.js — StreetSmart API
+﻿// server.js â€” StreetSmart API
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -14,6 +14,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
+const ML_SERVICE = process.env.ML_SERVICE || 'http://localhost:5001';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +29,49 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ==================== HELPERS ==================== */
+
+function nextVendorId(){
+  const row = db.prepare(`SELECT id FROM vendors WHERE id LIKE 'V%' ORDER BY CAST(SUBSTR(id, 2) AS INTEGER) DESC LIMIT 1`).get();
+  if (!row) return 'V0301';
+  const num = parseInt(row.id.slice(1)) + 1;
+  return 'V' + String(num).padStart(4, '0');
+}
+
+function nextSupplierId(){
+  const row = db.prepare(`SELECT id FROM suppliers WHERE id LIKE 'SUP%' ORDER BY CAST(SUBSTR(id, 4) AS INTEGER) DESC LIMIT 1`).get();
+  if (!row) return 'SUP021';
+  const num = parseInt(row.id.slice(3)) + 1;
+  return 'SUP' + String(num).padStart(3, '0');
+}
+
+function categoriesForVendorType(vendorType){
+  const map = {
+    'Food Vendor':      ['Street Foods', 'Fast Food'],
+    'Drink Vendor':     ['Beverages'],
+    'Snack Vendor':     ['Snacks'],
+    'Sweet Vendor':     ['Street Sweets'],
+    'Fruit Vendor':     ['Fresh Produce'],
+    'Accessory Vendor': ['Street Accessories', 'Mobile Accessories'],
+    'General Vendor':   ['Beverages', 'Snacks', 'Street Essentials', 'Personal Care']
+  };
+  return map[vendorType] || ['Street Foods'];
+}
+
+function assignStarterCatalog(vendorId, vendorType){
+  const cats = categoriesForVendorType(vendorType);
+  const placeholders = cats.map(() => '?').join(',');
+  const products = db.prepare(`SELECT id FROM products WHERE category IN (${placeholders})`).all(...cats);
+
+  // New vendors start with 0 stock and a reorder level of 20
+  const insert = db.prepare(`INSERT OR IGNORE INTO vendor_products (vendor_id, product_id, current_stock, reorder_level) VALUES (?, ?, 0, 20)`);
+  const tx = db.transaction(() => {
+    products.forEach(p => insert.run(vendorId, p.id));
+  });
+  tx();
+  return products.length;
+}
+
 /* ==================== AUTH MIDDLEWARE ==================== */
 
 function requireAuth(role = null){
@@ -39,7 +83,7 @@ function requireAuth(role = null){
     try {
       const payload = jwt.verify(header.slice(7), JWT_SECRET);
       if (role && payload.role !== role){
-        return res.status(403).json({ error: 'Forbidden — wrong role' });
+        return res.status(403).json({ error: 'Forbidden â€” wrong role' });
       }
       req.user = payload;
       next();
@@ -111,15 +155,47 @@ app.post('/api/auth/register', (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
 
   try {
+    let newVendorId = null;
+    let newSupplierId = null;
+    let productCount = 0;
+
+    if (role === 'vendor'){
+      newVendorId = nextVendorId();
+      db.prepare(`
+        INSERT INTO vendors (id, city, type, revenue, profit, units, transactions, products)
+        VALUES (?, ?, ?, 0, 0, 0, 0, 0)
+      `).run(newVendorId, city || 'Unknown', type || 'General Vendor');
+
+      productCount = assignStarterCatalog(newVendorId, type || 'General Vendor');
+    } else if (role === 'supplier'){
+      newSupplierId = nextSupplierId();
+      db.prepare(`
+        INSERT INTO suppliers (id, name, city, rating, on_time, quality, status, lead_time, category)
+        VALUES (?, ?, ?, 0, 0, 0, 'Active', 3, ?)
+      `).run(newSupplierId, name, city || 'Unknown', type || 'Street Foods');
+    }
+
     const info = db.prepare(`
-      INSERT INTO users (email, password_hash, role, name, city, type, approved)
-      VALUES (?, ?, ?, ?, ?, ?, 0)
-    `).run(email.toLowerCase(), hash, role, name, city || null, type || null);
+      INSERT INTO users (email, password_hash, role, name, city, type, vendor_id, supplier_id, approved)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(
+      email.toLowerCase(),
+      hash,
+      role,
+      name,
+      city || null,
+      type || null,
+      newVendorId,
+      newSupplierId
+    );
 
     res.status(201).json({
       success: true,
       message: 'Account created. An administrator will approve it shortly.',
-      userId: info.lastInsertRowid
+      userId: info.lastInsertRowid,
+      vendor_id: newVendorId,
+      supplier_id: newSupplierId,
+      products_assigned: productCount
     });
   } catch (err){
     res.status(500).json({ error: err.message });
@@ -183,34 +259,14 @@ app.post('/api/auth/reset-password', (req, res) => {
 
 app.get('/api/admin/users/pending', requireAuth('admin'), (req, res) => {
   const rows = db.prepare(`
-    SELECT id, email, role, name, city, type, created_at
-    FROM users
-    WHERE approved = 0
-    ORDER BY created_at DESC
-  `).all();
-  res.json(rows);
-});
-
-app.get('/api/admin/vendors/unassigned', requireAuth('admin'), (req, res) => {
-  const rows = db.prepare(`
-    SELECT v.id, v.city, v.type, v.revenue, v.transactions
-    FROM vendors v
-    LEFT JOIN users u ON u.vendor_id = v.id
-    WHERE u.id IS NULL
-    ORDER BY v.id
-    LIMIT 50
-  `).all();
-  res.json(rows);
-});
-
-app.get('/api/admin/suppliers/unassigned', requireAuth('admin'), (req, res) => {
-  const rows = db.prepare(`
-    SELECT s.id, s.name, s.city, s.category
-    FROM suppliers s
-    LEFT JOIN users u ON u.supplier_id = s.id
-    WHERE u.id IS NULL
-    ORDER BY s.name
-    LIMIT 50
+    SELECT u.id, u.email, u.role, u.name, u.city, u.type, u.vendor_id, u.supplier_id, u.created_at,
+           v.city AS vendor_city, v.type AS vendor_type,
+           s.name AS supplier_name, s.city AS supplier_city, s.category AS supplier_category
+    FROM users u
+    LEFT JOIN vendors v ON v.id = u.vendor_id
+    LEFT JOIN suppliers s ON s.id = u.supplier_id
+    WHERE u.approved = 0
+    ORDER BY u.created_at DESC
   `).all();
   res.json(rows);
 });
@@ -220,37 +276,21 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.approved === 1) return res.status(400).json({ error: 'User already approved' });
 
-  const { vendor_id, supplier_id } = req.body;
-
-  if (user.role === 'vendor' && !vendor_id){
-    return res.status(400).json({ error: 'Vendor must be assigned a vendor record before approval' });
-  }
-  if (user.role === 'supplier' && !supplier_id){
-    return res.status(400).json({ error: 'Supplier must be assigned a supplier record before approval' });
-  }
-
-  if (user.role === 'vendor'){
-    const vendor = db.prepare('SELECT id FROM vendors WHERE id = ?').get(vendor_id);
-    if (!vendor) return res.status(404).json({ error: 'Vendor record not found' });
-    const taken = db.prepare('SELECT id FROM users WHERE vendor_id = ?').get(vendor_id);
-    if (taken) return res.status(409).json({ error: 'That vendor record is already linked to another user' });
-  }
-  if (user.role === 'supplier'){
-    const sup = db.prepare('SELECT id FROM suppliers WHERE id = ?').get(supplier_id);
-    if (!sup) return res.status(404).json({ error: 'Supplier record not found' });
-    const taken = db.prepare('SELECT id FROM users WHERE supplier_id = ?').get(supplier_id);
-    if (taken) return res.status(409).json({ error: 'That supplier record is already linked to another user' });
+  if (user.role === 'vendor' && user.vendor_id){
+    const existing = db.prepare('SELECT COUNT(*) AS n FROM vendor_products WHERE vendor_id = ?').get(user.vendor_id);
+    if (existing.n === 0){
+      const vendor = db.prepare('SELECT type FROM vendors WHERE id = ?').get(user.vendor_id);
+      if (vendor) assignStarterCatalog(user.vendor_id, vendor.type);
+    }
   }
 
   db.prepare(`
     UPDATE users
     SET approved = 1,
         approved_at = CURRENT_TIMESTAMP,
-        approved_by = ?,
-        vendor_id = COALESCE(?, vendor_id),
-        supplier_id = COALESCE(?, supplier_id)
+        approved_by = ?
     WHERE id = ?
-  `).run(req.user.email, vendor_id || null, supplier_id || null, req.params.id);
+  `).run(req.user.email, req.params.id);
 
   res.json({ success: true, message: `User ${user.email} approved` });
 });
@@ -258,8 +298,76 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
 app.delete('/api/admin/users/:id', requireAuth('admin'), (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (user.vendor_id && user.role === 'vendor'){
+    db.prepare('DELETE FROM vendor_products WHERE vendor_id = ?').run(user.vendor_id);
+    db.prepare('DELETE FROM vendors WHERE id = ?').run(user.vendor_id);
+  }
+  if (user.supplier_id && user.role === 'supplier'){
+    db.prepare('DELETE FROM suppliers WHERE id = ?').run(user.supplier_id);
+  }
+
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ success: true, message: `User ${user.email} rejected and deleted` });
+});
+
+/* ==================== VENDOR'S OWN PRODUCTS ==================== */
+
+app.get('/api/vendors/me/products', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+  const rows = db.prepare(`
+    SELECT p.id, p.name, p.category, p.unit_price,
+           vp.current_stock, vp.reorder_level,
+           p.predicted_daily_demand,
+           s.name AS supplier_name, s.lead_time AS supplier_lead_time
+    FROM vendor_products vp
+    JOIN products p ON p.id = vp.product_id
+    LEFT JOIN suppliers s ON s.id = p.supplier_id
+    WHERE vp.vendor_id = ?
+    ORDER BY p.name
+  `).all(vendorId);
+
+  res.json(rows);
+});
+
+app.post('/api/vendors/me/products', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+  const { product_id } = req.body;
+  if (!product_id) return res.status(400).json({ error: 'product_id required' });
+
+  const exists = db.prepare('SELECT id FROM products WHERE id = ?').get(product_id);
+  if (!exists) return res.status(404).json({ error: 'Product not found' });
+
+  db.prepare('INSERT OR IGNORE INTO vendor_products (vendor_id, product_id, current_stock, reorder_level) VALUES (?, ?, 0, 20)').run(vendorId, product_id);
+  res.json({ success: true });
+});
+
+app.delete('/api/vendors/me/products/:pid', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+  db.prepare('DELETE FROM vendor_products WHERE vendor_id = ? AND product_id = ?').run(vendorId, req.params.pid);
+  res.json({ success: true });
+});
+
+/* ==================== ML SERVICE PROXY ==================== */
+
+app.post('/api/predict', requireAuth(), async (req, res) => {
+  try {
+    const response = await fetch(`${ML_SERVICE}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err){
+    res.status(503).json({ error: 'ML service unavailable: ' + err.message });
+  }
 });
 
 /* ==================== KPIs ==================== */
@@ -360,20 +468,37 @@ app.get('/api/vendors/me', requireAuth('vendor'), (req, res) => {
 
 app.get('/api/vendors/me/stats', requireAuth('vendor'), (req, res) => {
   const vendorId = req.user.vendorId;
+  const email = req.user.email;
   if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
 
   const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendorId);
-  if (!vendor) return res.status(404).json({ error: 'Not found' });
+  if (!vendor) return res.status(404).json({ error: 'Vendor record not found' });
+
+  // Compute real activity from sales_log filtered by this vendor's email
+  const sales = db.prepare(`
+    SELECT
+      COALESCE(SUM(total_amount), 0) AS revenue,
+      COALESCE(SUM(quantity), 0) AS units,
+      COUNT(*) AS transactions
+    FROM sales_log
+    WHERE sold_by = ?
+  `).get(email);
+
+  // Estimate profit: assume 30% margin on revenue
+  const profit = Math.round((sales.revenue * 0.30) * 100) / 100;
+
+  // Count products in this vendor's catalog
+  const productsRow = db.prepare('SELECT COUNT(*) AS n FROM vendor_products WHERE vendor_id = ?').get(vendorId);
 
   res.json({
     vendor_id: vendor.id,
     city: vendor.city,
     type: vendor.type,
-    revenue: vendor.revenue,
-    profit: vendor.profit,
-    units: vendor.units,
-    transactions: vendor.transactions,
-    skus_sold: vendor.products
+    revenue: sales.revenue,
+    profit,
+    units: sales.units,
+    transactions: sales.transactions,
+    skus_sold: productsRow.n
   });
 });
 
@@ -386,7 +511,13 @@ app.get('/api/suppliers', (req, res) => {
 app.get('/api/suppliers/:id', (req, res) => {
   const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'Not found' });
-  const products = db.prepare('SELECT * FROM products WHERE supplier_id = ?').all(req.params.id);
+  const products = db.prepare(`
+    SELECT sp.product_id, p.name, p.category, sp.price, sp.moq, sp.lead_time, sp.active
+    FROM supplier_products sp
+    JOIN products p ON p.id = sp.product_id
+    WHERE sp.supplier_id = ?
+    ORDER BY p.name
+  `).all(req.params.id);
   res.json({ ...s, products });
 });
 
@@ -446,7 +577,12 @@ app.post('/api/products', requireAuth('vendor'), (req, res) => {
     db.prepare(`
       INSERT INTO products (id, name, category, unit_price, current_stock, reorder_level, supplier_id, predicted_daily_demand)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(id, name, category, parseFloat(unit_price), parseInt(current_stock) || 0, parseInt(reorder_level) || 20, supplier_id || null);
+    `).run(id, name, category, parseFloat(unit_price), 0, parseInt(reorder_level) || 20, supplier_id || null);
+
+    if (req.user.vendorId){
+      db.prepare('INSERT OR IGNORE INTO vendor_products (vendor_id, product_id, current_stock, reorder_level) VALUES (?, ?, ?, ?)').run(req.user.vendorId, id, parseInt(current_stock) || 0, parseInt(reorder_level) || 20);
+    }
+
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     res.status(201).json({ success: true, product });
   } catch (err) {
@@ -459,10 +595,14 @@ app.patch('/api/products/:id/stock', requireAuth('vendor'), (req, res) => {
   if (typeof current_stock !== 'number' || current_stock < 0){
     return res.status(400).json({ error: 'current_stock must be a non-negative number' });
   }
+
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(400).json({ error: 'Not linked to a vendor' });
+
   const product = db.prepare('SELECT id, name FROM products WHERE id = ?').get(req.params.id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
 
-  db.prepare('UPDATE products SET current_stock = ? WHERE id = ?').run(current_stock, req.params.id);
+  db.prepare('UPDATE vendor_products SET current_stock = ? WHERE vendor_id = ? AND product_id = ?').run(current_stock, vendorId, req.params.id);
   res.json({ success: true, message: `Stock updated for ${product.name}: ${current_stock} units`, product: { id: req.params.id, name: product.name, current_stock } });
 });
 
@@ -470,11 +610,17 @@ app.post('/api/products/:id/receive', requireAuth('vendor'), (req, res) => {
   const { quantity } = req.body;
   if (!quantity || quantity <= 0) return res.status(400).json({ error: 'positive quantity required' });
 
-  const product = db.prepare('SELECT id, name, current_stock FROM products WHERE id = ?').get(req.params.id);
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(400).json({ error: 'Not linked to a vendor' });
+
+  const product = db.prepare('SELECT id, name FROM products WHERE id = ?').get(req.params.id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
 
-  const newStock = product.current_stock + parseInt(quantity);
-  db.prepare('UPDATE products SET current_stock = ? WHERE id = ?').run(newStock, req.params.id);
+  const vp = db.prepare('SELECT current_stock FROM vendor_products WHERE vendor_id = ? AND product_id = ?').get(vendorId, req.params.id);
+  if (!vp) return res.status(404).json({ error: 'This product is not in your catalog' });
+
+  const newStock = (vp.current_stock || 0) + parseInt(quantity);
+  db.prepare('UPDATE vendor_products SET current_stock = ? WHERE vendor_id = ? AND product_id = ?').run(newStock, vendorId, req.params.id);
   res.json({ success: true, message: `Received ${quantity} units of ${product.name}. New stock: ${newStock}`, product: { id: req.params.id, name: product.name, current_stock: newStock } });
 });
 
@@ -490,6 +636,7 @@ app.patch('/api/products/:id', requireAuth('supplier'), (req, res) => {
 app.delete('/api/products/:id', requireAuth('admin'), (req, res) => {
   const product = db.prepare('SELECT id, name FROM products WHERE id = ?').get(req.params.id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
+  db.prepare('DELETE FROM vendor_products WHERE product_id = ?').run(req.params.id);
   db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
   res.json({ success: true, message: `Deleted ${product.name}` });
 });
@@ -521,7 +668,7 @@ app.get('/api/reorder', (req, res) => {
       id: r.id, name: r.name, category: r.category,
       current_stock: r.current_stock,
       predicted_daily_demand: r.predicted_daily_demand,
-      supplier: r.supplier_name || '—',
+      supplier: r.supplier_name || 'â€”',
       lead_time: r.lead_time || 0,
       unit_price: r.unit_price,
       decision, priority, order_qty,
@@ -555,40 +702,48 @@ app.post('/api/sales', requireAuth('vendor'), (req, res) => {
   const { product_id, quantity } = req.body;
   if (!product_id || !quantity || quantity <= 0) return res.status(400).json({ error: 'product_id and positive quantity required' });
 
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(400).json({ error: 'Not linked to a vendor' });
+
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
-  if (product.current_stock < quantity){
-    return res.status(400).json({ error: `Not enough stock. Only ${product.current_stock} units available.` });
+
+  const vp = db.prepare('SELECT * FROM vendor_products WHERE vendor_id = ? AND product_id = ?').get(vendorId, product_id);
+  if (!vp) return res.status(404).json({ error: 'This product is not in your catalog' });
+  if (vp.current_stock < quantity){
+    return res.status(400).json({ error: `Not enough stock. Only ${vp.current_stock} units available.` });
   }
 
   const recordSale = db.prepare(`
     INSERT INTO sales_log (product_id, quantity, unit_price, total_amount, sold_by, sold_at)
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
-  const updateStock = db.prepare('UPDATE products SET current_stock = current_stock - ? WHERE id = ?');
+  const updateStock = db.prepare('UPDATE vendor_products SET current_stock = current_stock - ? WHERE vendor_id = ? AND product_id = ?');
 
   const tx = db.transaction(() => {
     recordSale.run(product_id, quantity, product.unit_price, quantity * product.unit_price, req.user.email);
-    updateStock.run(quantity, product_id);
+    updateStock.run(quantity, vendorId, product_id);
   });
 
   try {
     tx();
-    const updated = db.prepare('SELECT id, name, current_stock FROM products WHERE id = ?').get(product_id);
-    res.status(201).json({ success: true, message: `Sale recorded: ${quantity} × ${product.name}`, product: updated });
+    const updated = db.prepare('SELECT current_stock FROM vendor_products WHERE vendor_id = ? AND product_id = ?').get(vendorId, product_id);
+    res.status(201).json({ success: true, message: `Sale recorded: ${quantity} Ã— ${product.name}`, product: { id: product_id, name: product.name, current_stock: updated.current_stock } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 app.get('/api/sales-log', requireAuth(), (req, res) => {
+  const email = req.user.email;
   const rows = db.prepare(`
     SELECT s.id, s.product_id, p.name AS product_name, s.quantity,
            s.unit_price, s.total_amount, s.sold_by, s.sold_at
     FROM sales_log s
     JOIN products p ON p.id = s.product_id
+    WHERE s.sold_by = ?
     ORDER BY s.sold_at DESC LIMIT 50
-  `).all();
+  `).all(email);
   res.json(rows);
 });
 
@@ -614,43 +769,51 @@ app.patch('/api/suppliers/:id', requireAuth('supplier'), (req, res) => {
 });
 
 app.post('/api/suppliers/:id/products', requireAuth('supplier'), (req, res) => {
-  const { product_id, product, category, price, moq, lead_time } = req.body;
-  if (!product_id || !product || !category || price === undefined){
-    return res.status(400).json({ error: 'product_id, product, category, price required' });
+  const { product_id, price, moq, lead_time } = req.body;
+  if (!product_id || price === undefined){
+    return res.status(400).json({ error: 'product_id and price are required' });
   }
 
-  const exists = db.prepare('SELECT id FROM products WHERE id = ?').get(product_id);
+  const exists = db.prepare('SELECT id, name FROM products WHERE id = ?').get(product_id);
   if (!exists) return res.status(404).json({ error: 'Product ID not in catalogue.' });
 
-  db.prepare('UPDATE products SET supplier_id = ?, unit_price = ? WHERE id = ?')
-    .run(req.params.id, parseFloat(price), product_id);
+  const already = db.prepare('SELECT 1 FROM supplier_products WHERE supplier_id = ? AND product_id = ?').get(req.params.id, product_id);
+  if (already) return res.status(409).json({ error: 'You already supply this product' });
 
-  res.status(201).json({ success: true, message: `Product ${product} assigned`, product: { product_id, product, category, price, moq, lead_time } });
+  db.prepare(`
+    INSERT INTO supplier_products (supplier_id, product_id, price, moq, lead_time)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(req.params.id, product_id, parseFloat(price), parseInt(moq) || 20, parseInt(lead_time) || 3);
+
+  res.status(201).json({ success: true, message: exists.name + ' added to your catalog' });
 });
 
 app.patch('/api/suppliers/:id/products/:pid', requireAuth('supplier'), (req, res) => {
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.pid);
-  if (!product) return res.status(404).json({ error: 'Product not found' });
+  const link = db.prepare('SELECT * FROM supplier_products WHERE supplier_id = ? AND product_id = ?').get(req.params.id, req.params.pid);
+  if (!link) return res.status(404).json({ error: 'You do not supply this product' });
 
   const updates = {};
-  if (req.body.price !== undefined) updates.unit_price = parseFloat(req.body.price);
-  if (req.body.unit_price !== undefined) updates.unit_price = parseFloat(req.body.unit_price);
+  if (req.body.price !== undefined) updates.price = parseFloat(req.body.price);
+  if (req.body.unit_price !== undefined) updates.price = parseFloat(req.body.unit_price);
+  if (req.body.moq !== undefined) updates.moq = parseInt(req.body.moq);
+  if (req.body.lead_time !== undefined) updates.lead_time = parseInt(req.body.lead_time);
+  if (req.body.active !== undefined) updates.active = parseInt(req.body.active);
+
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
   const setClause = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-  const values = [...Object.values(updates), req.params.pid];
-  db.prepare(`UPDATE products SET ${setClause} WHERE id = ?`).run(...values);
+  const values = [...Object.values(updates), req.params.id, req.params.pid];
+  db.prepare(`UPDATE supplier_products SET ${setClause} WHERE supplier_id = ? AND product_id = ?`).run(...values);
 
-  const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.pid);
-  res.json({ success: true, product: updated });
+  res.json({ success: true });
 });
 
 app.delete('/api/suppliers/:id/products/:pid', requireAuth('supplier'), (req, res) => {
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.pid);
-  if (!product) return res.status(404).json({ error: 'Product not found' });
+  const link = db.prepare('SELECT * FROM supplier_products WHERE supplier_id = ? AND product_id = ?').get(req.params.id, req.params.pid);
+  if (!link) return res.status(404).json({ error: 'You do not supply this product' });
 
-  db.prepare('UPDATE products SET supplier_id = NULL WHERE id = ?').run(req.params.pid);
-  res.json({ success: true, message: 'Product removed from catalogue' });
+  db.prepare('DELETE FROM supplier_products WHERE supplier_id = ? AND product_id = ?').run(req.params.id, req.params.pid);
+  res.json({ success: true, message: 'Product removed from your catalog' });
 });
 
 /* ==================== VENDORS (ADMIN CRUD) ==================== */
@@ -698,6 +861,7 @@ app.patch('/api/vendors/:id', requireAuth('admin'), (req, res) => {
 app.delete('/api/vendors/:id', requireAuth('admin'), (req, res) => {
   const vendor = db.prepare('SELECT id FROM vendors WHERE id = ?').get(req.params.id);
   if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+  db.prepare('DELETE FROM vendor_products WHERE vendor_id = ?').run(req.params.id);
   db.prepare('DELETE FROM vendors WHERE id = ?').run(req.params.id);
   res.json({ success: true, message: `Deleted vendor ${req.params.id}` });
 });
@@ -758,18 +922,18 @@ app.delete('/api/discounts/:id', requireAuth('supplier'), (req, res) => {
   res.json({ success: true, message: 'Discount removed' });
 });
 
-/* ==================== ML PREDICTIONS ==================== */
+/* ==================== ML PREDICTIONS (BATCH FILES) ==================== */
 
 app.get('/api/predictions', (req, res) => {
-  const filePath = path.join(__dirname, '..', 'streetsmart-ml', 'predictions.json');
+  const filePath = path.join(__dirname, 'ml-data', 'predictions.json');
   if (!fs.existsSync(filePath)){
-    return res.status(404).json({ error: 'predictions.json not found. Run: cd ../streetsmart-ml && python3 predict.py' });
+    return res.status(404).json({ error: 'predictions.json not found.' });
   }
   res.json(JSON.parse(fs.readFileSync(filePath, 'utf8')));
 });
 
 app.get('/api/model-metrics', (req, res) => {
-  const filePath = path.join(__dirname, '..', 'streetsmart-ml', 'model_metrics.json');
+  const filePath = path.join(__dirname, 'ml-data', 'model_metrics.json');
   if (!fs.existsSync(filePath)){
     return res.json({ note: 'model_metrics.json not found' });
   }
@@ -802,6 +966,200 @@ app.get('/api/alerts', (req, res) => {
   });
 });
 
+/* ==================== GLOBAL SEARCH ==================== */
+
+app.get('/api/search', requireAuth(), (req, res) => {
+  const q = (req.query.q || '').trim().toLowerCase();
+  if (q.length < 2) return res.json({ products: [], suppliers: [] });
+
+  const like = '%' + q + '%';
+
+  const products = db.prepare(`
+    SELECT id, name, category, unit_price
+    FROM products
+    WHERE LOWER(name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(id) LIKE ?
+    ORDER BY name
+    LIMIT 8
+  `).all(like, like, like);
+
+  const suppliers = db.prepare(`
+    SELECT id, name, city, category, rating
+    FROM suppliers
+    WHERE LOWER(name) LIKE ? OR LOWER(city) LIKE ? OR LOWER(category) LIKE ? OR LOWER(id) LIKE ?
+    ORDER BY rating DESC
+    LIMIT 8
+  `).all(like, like, like, like);
+
+  res.json({ products, suppliers });
+});
+
+/* ==================== WEATHER PROXY ==================== */
+
+app.get('/api/weather/:city', requireAuth(), async (req, res) => {
+  const apiKey = process.env.WEATHER_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'WEATHER_API_KEY not set in .env' });
+
+  const city = req.params.city;
+  const url = 'https://api.openweathermap.org/data/2.5/weather?q=' + encodeURIComponent(city) + ',ZA&appid=' + apiKey + '&units=metric';
+
+  try {
+    const r = await fetch(url);
+    const data = await r.json();
+
+    if (!r.ok){
+      // Fallback to a deterministic mock if the city isn't found or the key is invalid
+      const hash = Array.from(city).reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) & 0xFFFFFF, 0);
+      const options = ['Sunny', 'Cloudy', 'Rainy'];
+      const mockWeather = options[hash % 3];
+      return res.json({
+        city,
+        weather: mockWeather,
+        temperature: 22,
+        source: 'fallback',
+        note: data.message || 'Weather API returned an error, using mock'
+      });
+    }
+
+    // Map OpenWeatherMap's "main" field to our 3 categories
+    const main = (data.weather && data.weather[0] && data.weather[0].main) || '';
+    let mapped = 'Sunny';
+    if (main === 'Clouds') mapped = 'Cloudy';
+    else if (main === 'Rain' || main === 'Drizzle' || main === 'Thunderstorm') mapped = 'Rainy';
+    else if (main === 'Clear') mapped = 'Sunny';
+    else mapped = 'Cloudy';
+
+    res.json({
+      city,
+      weather: mapped,
+      temperature: Math.round(data.main.temp),
+      description: data.weather[0].description,
+      source: 'live'
+    });
+  } catch (err){
+    res.status(503).json({ error: 'Weather fetch failed: ' + err.message });
+  }
+});
+
+/* ==================== VENDOR PREDICT + HISTORY ==================== */
+
+app.post('/api/vendors/me/predict', requireAuth('vendor'), async (req, res) => {
+  const vendorId = req.user.vendorId;
+  const { product_id, weather, holiday, payload } = req.body;
+  if (!vendorId) return res.status(400).json({ error: 'Not linked to a vendor' });
+  if (!product_id || !payload) return res.status(400).json({ error: 'product_id and payload required' });
+
+  try {
+    const response = await fetch(ML_SERVICE + '/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) return res.status(response.status).json(data);
+
+    const insertSql = 'INSERT INTO prediction_history (vendor_id, product_id, predicted_demand, weather, holiday, day_of_week, season) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    db.prepare(insertSql).run(
+      vendorId,
+      product_id,
+      data.predicted_daily_demand,
+      weather || null,
+      holiday || null,
+      payload.Day_of_Week || null,
+      payload.Season || null
+    );
+
+    res.json(data);
+  } catch (err){
+    res.status(503).json({ error: 'ML service unavailable: ' + err.message });
+  }
+});
+
+app.get('/api/vendors/me/predictions/:pid', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(400).json({ error: 'Not linked to a vendor' });
+
+  const sql = 'SELECT id, predicted_demand, weather, holiday, day_of_week, season, predicted_at FROM prediction_history WHERE vendor_id = ? AND product_id = ? ORDER BY predicted_at DESC LIMIT 5';
+  const rows = db.prepare(sql).all(vendorId, req.params.pid);
+
+  res.json(rows);
+});
+/* ==================== VENDOR SALES TREND ==================== */
+
+app.get('/api/vendors/me/sales-trend', requireAuth('vendor'), (req, res) => {
+  const email = req.user.email;
+  const days = parseInt(req.query.days) || 7;
+
+  // Build array of date keys (YYYY-MM-DD) for the last N days
+  const today = new Date();
+  const dateKeys = [];
+  for (let i = days - 1; i >= 0; i--){
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    dateKeys.push({ date: key, label: d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' }) });
+  }
+
+  // Query sales for this vendor in the range
+  const startDate = dateKeys[0].date + ' 00:00:00';
+  const rows = db.prepare(`
+    SELECT DATE(sold_at) AS day,
+           SUM(total_amount) AS revenue,
+           SUM(quantity) AS units
+    FROM sales_log
+    WHERE sold_by = ? AND sold_at >= ?
+    GROUP BY DATE(sold_at)
+  `).all(email, startDate);
+
+  const byDay = {};
+  rows.forEach(r => { byDay[r.day] = r; });
+
+  const result = dateKeys.map(d => ({
+    date: d.date,
+    label: d.label,
+    revenue: byDay[d.date] ? byDay[d.date].revenue : 0,
+    units: byDay[d.date] ? byDay[d.date].units : 0
+  }));
+
+  const totalRevenue = result.reduce((s, r) => s + r.revenue, 0);
+  const totalUnits = result.reduce((s, r) => s + r.units, 0);
+
+  res.json({ days, total_revenue: totalRevenue, total_units: totalUnits, data: result });
+});
+
+/* ==================== SUPPLIER'S OWN CATALOG ==================== */
+
+app.get('/api/suppliers/me/products', requireAuth('supplier'), (req, res) => {
+  const supplierId = req.user.supplierId;
+  if (!supplierId) return res.status(404).json({ error: 'Not linked to a supplier' });
+
+  const rows = db.prepare(`
+    SELECT sp.product_id, p.name, p.category, p.unit_price AS retail_price,
+           sp.price, sp.moq, sp.lead_time, sp.active
+    FROM supplier_products sp
+    JOIN products p ON p.id = sp.product_id
+    WHERE sp.supplier_id = ?
+    ORDER BY p.name
+  `).all(supplierId);
+
+  res.json(rows);
+});
+
+app.get('/api/suppliers/me/catalog', requireAuth('supplier'), (req, res) => {
+  const supplierId = req.user.supplierId;
+  if (!supplierId) return res.status(404).json({ error: 'Not linked to a supplier' });
+
+  const rows = db.prepare(`
+    SELECT p.id, p.name, p.category, p.unit_price AS retail_price,
+           CASE WHEN sp.product_id IS NOT NULL THEN 1 ELSE 0 END AS i_supply,
+           sp.price AS my_price, sp.moq AS my_moq, sp.lead_time AS my_lead_time
+    FROM products p
+    LEFT JOIN supplier_products sp ON sp.product_id = p.id AND sp.supplier_id = ?
+    ORDER BY p.name
+  `).all(supplierId);
+
+  res.json(rows);
+});
+
 /* ==================== HEALTH ==================== */
 
 app.get('/api/health', (req, res) => {
@@ -811,6 +1169,11 @@ app.get('/api/health', (req, res) => {
 /* ==================== START ==================== */
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 StreetSmart API at http://localhost:${PORT}`);
+  console.log(`\nðŸš€ StreetSmart API at http://localhost:${PORT}`);
   console.log(`   Test: http://localhost:${PORT}/api/health\n`);
 });
+
+
+
+
+

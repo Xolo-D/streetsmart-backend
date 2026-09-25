@@ -1,4 +1,4 @@
-// database.js — SQLite schema
+﻿// database.js â€” SQLite schema
 import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -77,6 +77,31 @@ db.exec(`
     products INTEGER DEFAULT 0
   );
 
+  CREATE TABLE IF NOT EXISTS vendor_products (
+    vendor_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (vendor_id, product_id),
+    FOREIGN KEY (vendor_id) REFERENCES vendors(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS supplier_products (
+    supplier_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    price REAL DEFAULT 0,
+    moq INTEGER DEFAULT 20,
+    lead_time INTEGER DEFAULT 3,
+    active INTEGER DEFAULT 1,
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (supplier_id, product_id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_supplier_products_supplier ON supplier_products(supplier_id);
+  CREATE INDEX IF NOT EXISTS idx_supplier_products_product ON supplier_products(product_id);
+
   CREATE TABLE IF NOT EXISTS monthly_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     month TEXT NOT NULL,
@@ -122,6 +147,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_vendors_city ON vendors(city);
   CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
   CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+  CREATE INDEX IF NOT EXISTS idx_vendor_products_vendor ON vendor_products(vendor_id);
   CREATE INDEX IF NOT EXISTS idx_orders_vendor ON orders(vendor_id);
   CREATE INDEX IF NOT EXISTS idx_sales_log_product ON sales_log(product_id);
   CREATE INDEX IF NOT EXISTS idx_sales_log_date ON sales_log(sold_at);
@@ -131,5 +157,5 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
 `);
 
-console.log('✓ Database schema ready');
+console.log('âœ“ Database schema ready');
 export default db;
