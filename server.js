@@ -113,7 +113,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role, supplierId: user.supplier_id, vendorId: user.vendor_id, name: user.name },
+    { id: user.id, email: user.email, role: user.role, supplierId: user.supplier_id, vendorId: user.vendor_id, name: user.name, mode: user.mode || 'live' },
     JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -125,7 +125,8 @@ app.post('/api/auth/login', (req, res) => {
       role: user.role,
       name: user.name,
       supplierId: user.supplier_id,
-      vendorId: user.vendor_id
+      vendorId: user.vendor_id,
+      mode: user.mode || 'live'
     }
   });
 });
@@ -137,7 +138,7 @@ app.get('/api/auth/me', requireAuth(), (req, res) => {
 /* ==================== REGISTRATION ==================== */
 
 app.post('/api/auth/register', (req, res) => {
-  const { email, password, name, role, city, type } = req.body;
+  const { email, password, name, role, city, type, supplier_id, mode: signupMode } = req.body;
 
   if (!email || !password || !name || !role){
     return res.status(400).json({ error: 'Email, password, name, and role are required' });
@@ -295,8 +296,29 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
   res.json({ success: true, message: `User ${user.email} approved` });
 });
 
-// ── GET /api/admin/stats — live counts for the admin Overview ──
+// ── GET /api/admin/stats — mode-aware ─────────────────────────
 app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
+  // DEMO MODE — frozen snapshot from data.json
+  if (req.user.mode === 'demo') {
+    try {
+      const data = JSON.parse(fs.readFileSync('./data.json', 'utf8'));
+      return res.json({
+        mode: 'demo',
+        vendors:      data.kpis.num_vendors,
+        suppliers:    data.suppliers.length,
+        products:     data.kpis.num_products,
+        transactions: data.kpis.total_transactions,
+        pendingUsers: 0,
+        revenue:      data.kpis.total_revenue,
+        byCity:       data.vendors_by_city.map(c => ({ label: c.city,  value: c.count })),
+        byType:       data.vendors_by_type.map(t => ({ label: t.type, value: t.count }))
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'demo data missing', detail: e.message });
+    }
+  }
+
+  // LIVE MODE — real DB counts
   const vendors      = db.prepare('SELECT COUNT(*) AS n FROM vendors').get().n;
   const suppliers    = db.prepare('SELECT COUNT(*) AS n FROM suppliers').get().n;
   const products     = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
@@ -305,7 +327,8 @@ app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
   const revenue      = db.prepare('SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors').get().r;
   const byCity       = db.prepare('SELECT city AS label, COUNT(*) AS value FROM vendors GROUP BY city ORDER BY value DESC').all();
   const byType       = db.prepare('SELECT type AS label, COUNT(*) AS value FROM vendors GROUP BY type ORDER BY value DESC').all();
-  res.json({ vendors, suppliers, products, transactions, pendingUsers, revenue, byCity, byType });
+
+  res.json({ mode: 'live', vendors, suppliers, products, transactions, pendingUsers, revenue, byCity, byType });
 });
 
 app.delete('/api/admin/users/:id', requireAuth('admin'), (req, res) => {
@@ -519,6 +542,16 @@ app.get('/api/vendors/me/stats', requireAuth('vendor'), (req, res) => {
 
 app.get('/api/suppliers', (req, res) => {
   res.json(db.prepare('SELECT * FROM suppliers ORDER BY rating DESC').all());
+});
+
+app.get('/api/suppliers/list', (req, res) => {
+  res.json(db.prepare('SELECT id, name, city, category FROM suppliers ORDER BY name').all());
+});
+
+app.get('/api/suppliers/:id/name', (req, res) => {
+  const s = db.prepare('SELECT id, name, city, mode FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  res.json(s);
 });
 
 app.get('/api/suppliers/:id', (req, res) => {
