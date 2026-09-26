@@ -102,6 +102,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_supplier_products_supplier ON supplier_products(supplier_id);
   CREATE INDEX IF NOT EXISTS idx_supplier_products_product ON supplier_products(product_id);
 
+  CREATE TABLE IF NOT EXISTS prediction_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    predicted_demand REAL NOT NULL,
+    weather TEXT,
+    holiday TEXT,
+    day_of_week TEXT,
+    season TEXT,
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pred_history_vendor ON prediction_history(vendor_id);
+  CREATE INDEX IF NOT EXISTS idx_pred_history_product ON prediction_history(product_id);
+  CREATE INDEX IF NOT EXISTS idx_pred_history_date ON prediction_history(predicted_at);
+
   CREATE TABLE IF NOT EXISTS monthly_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     month TEXT NOT NULL,
