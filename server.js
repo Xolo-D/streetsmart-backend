@@ -295,6 +295,19 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
   res.json({ success: true, message: `User ${user.email} approved` });
 });
 
+// ── GET /api/admin/stats — live counts for the admin Overview ──
+app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
+  const vendors      = db.prepare('SELECT COUNT(*) AS n FROM vendors').get().n;
+  const suppliers    = db.prepare('SELECT COUNT(*) AS n FROM suppliers').get().n;
+  const products     = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+  const transactions = db.prepare('SELECT COUNT(*) AS n FROM sales_log').get().n;
+  const pendingUsers = db.prepare('SELECT COUNT(*) AS n FROM users WHERE approved = 0').get().n;
+  const revenue      = db.prepare('SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors').get().r;
+  const byCity       = db.prepare('SELECT city AS label, COUNT(*) AS value FROM vendors GROUP BY city ORDER BY value DESC').all();
+  const byType       = db.prepare('SELECT type AS label, COUNT(*) AS value FROM vendors GROUP BY type ORDER BY value DESC').all();
+  res.json({ vendors, suppliers, products, transactions, pendingUsers, revenue, byCity, byType });
+});
+
 app.delete('/api/admin/users/:id', requireAuth('admin'), (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
