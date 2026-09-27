@@ -1,4 +1,4 @@
-﻿// server.js â€” StreetSmart API
+import installHorizonRoutes from './horizon-routes.js';// server.js Ã¢â‚¬â€ StreetSmart API
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -83,7 +83,7 @@ function requireAuth(role = null){
     try {
       const payload = jwt.verify(header.slice(7), JWT_SECRET);
       if (role && payload.role !== role){
-        return res.status(403).json({ error: 'Forbidden â€” wrong role' });
+        return res.status(403).json({ error: 'Forbidden Ã¢â‚¬â€ wrong role' });
       }
       req.user = payload;
       next();
@@ -113,7 +113,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role, supplierId: user.supplier_id, vendorId: user.vendor_id, name: user.name, mode: user.mode || 'live' },
+    { id: user.id, email: user.email, role: user.role, supplierId: user.supplier_id, vendorId: user.vendor_id, name: user.name, mode: user.mode || 'live', city: user.city, type: user.type },
     JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -126,6 +126,8 @@ app.post('/api/auth/login', (req, res) => {
       name: user.name,
       supplierId: user.supplier_id,
       vendorId: user.vendor_id,
+      city: user.city || null,
+      type: user.type || null,
       mode: user.mode || 'live'
     }
   });
@@ -296,9 +298,9 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
   res.json({ success: true, message: `User ${user.email} approved` });
 });
 
-// ── GET /api/admin/stats — mode-aware ─────────────────────────
+// â”€â”€ GET /api/admin/stats â€” mode-aware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
-  // DEMO MODE — frozen snapshot from data.json
+  // DEMO MODE â€” frozen snapshot from data.json
   if (req.user.mode === 'demo') {
     try {
       const data = JSON.parse(fs.readFileSync('./data.json', 'utf8'));
@@ -318,15 +320,15 @@ app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
     }
   }
 
-  // LIVE MODE — real DB counts
-  const vendors      = db.prepare('SELECT COUNT(*) AS n FROM vendors').get().n;
-  const suppliers    = db.prepare('SELECT COUNT(*) AS n FROM suppliers').get().n;
+  // LIVE MODE â€” real DB counts
+  const vendors      = db.prepare("SELECT COUNT(*) AS n FROM vendors WHERE mode = 'live'").get().n;
+  const suppliers    = db.prepare("SELECT COUNT(*) AS n FROM suppliers WHERE mode = 'live'").get().n;
   const products     = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
   const transactions = db.prepare('SELECT COUNT(*) AS n FROM sales_log').get().n;
   const pendingUsers = db.prepare('SELECT COUNT(*) AS n FROM users WHERE approved = 0').get().n;
-  const revenue      = db.prepare('SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors').get().r;
-  const byCity       = db.prepare('SELECT city AS label, COUNT(*) AS value FROM vendors GROUP BY city ORDER BY value DESC').all();
-  const byType       = db.prepare('SELECT type AS label, COUNT(*) AS value FROM vendors GROUP BY type ORDER BY value DESC').all();
+  const revenue      = db.prepare("SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors WHERE mode = 'live'").get().r;
+  const byCity       = db.prepare("SELECT city AS label, COUNT(*) AS value FROM vendors WHERE mode = 'live' GROUP BY city ORDER BY value DESC").all();
+  const byType       = db.prepare("SELECT type AS label, COUNT(*) AS value FROM vendors WHERE mode = 'live' GROUP BY type ORDER BY value DESC").all();
 
   res.json({ mode: 'live', vendors, suppliers, products, transactions, pendingUsers, revenue, byCity, byType });
 });
@@ -470,15 +472,16 @@ app.get('/api/vendor-types', (req, res) => {
 
 /* ==================== VENDORS ==================== */
 
-app.get('/api/vendors', (req, res) => {
+app.get('/api/vendors', requireAuth('admin'), (req, res) => {
   const { search } = req.query;
-  let sql = 'SELECT * FROM vendors';
-  const params = [];
+  const mode = req.user.mode || 'live';
+  let sql = 'SELECT * FROM vendors WHERE mode = ?';
+  const params = [mode];
   if (search){
-    sql += ' WHERE id LIKE ? OR city LIKE ? OR type LIKE ?';
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    sql += ' AND (id LIKE ? OR city LIKE ? OR type LIKE ?)';
+    params.push('%' + search + '%', '%' + search + '%', '%' + search + '%');
   }
-  sql += ' ORDER BY revenue DESC LIMIT 200';
+  sql += ' ORDER BY revenue DESC';
   res.json(db.prepare(sql).all(...params));
 });
 
@@ -540,8 +543,11 @@ app.get('/api/vendors/me/stats', requireAuth('vendor'), (req, res) => {
 
 /* ==================== SUPPLIERS ==================== */
 
-app.get('/api/suppliers', (req, res) => {
-  res.json(db.prepare('SELECT * FROM suppliers ORDER BY rating DESC').all());
+app.get('/api/suppliers', requireAuth('admin'), (req, res) => {
+  const mode = req.user.mode || 'live';
+  res.json(
+    db.prepare('SELECT * FROM suppliers WHERE mode = ? ORDER BY rating DESC').all(mode)
+  );
 });
 
 app.get('/api/suppliers/list', (req, res) => {
@@ -714,7 +720,7 @@ app.get('/api/reorder', (req, res) => {
       id: r.id, name: r.name, category: r.category,
       current_stock: r.current_stock,
       predicted_daily_demand: r.predicted_daily_demand,
-      supplier: r.supplier_name || 'â€”',
+      supplier: r.supplier_name || 'Ã¢â‚¬â€',
       lead_time: r.lead_time || 0,
       unit_price: r.unit_price,
       decision, priority, order_qty,
@@ -774,7 +780,7 @@ app.post('/api/sales', requireAuth('vendor'), (req, res) => {
   try {
     tx();
     const updated = db.prepare('SELECT current_stock FROM vendor_products WHERE vendor_id = ? AND product_id = ?').get(vendorId, product_id);
-    res.status(201).json({ success: true, message: `Sale recorded: ${quantity} Ã— ${product.name}`, product: { id: product_id, name: product.name, current_stock: updated.current_stock } });
+    res.status(201).json({ success: true, message: `Sale recorded: ${quantity} Ãƒâ€” ${product.name}`, product: { id: product_id, name: product.name, current_stock: updated.current_stock } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1213,9 +1219,11 @@ app.get('/api/health', (req, res) => {
 });
 
 /* ==================== START ==================== */
+// ---- Phase 1: multi-day weather-aware prediction ----
+installHorizonRoutes(app, db, requireAuth, ML_SERVICE);
 
 app.listen(PORT, () => {
-  console.log(`\nðŸš€ StreetSmart API at http://localhost:${PORT}`);
+  console.log(`\nÃ°Å¸Å¡â‚¬ StreetSmart API at http://localhost:${PORT}`);
   console.log(`   Test: http://localhost:${PORT}/api/health\n`);
 });
 
