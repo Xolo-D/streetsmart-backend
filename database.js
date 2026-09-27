@@ -1,4 +1,4 @@
-﻿// database.js â€” SQLite schema
+// database.js â€” SQLite schema
 import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
 dotenv.config();
