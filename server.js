@@ -8,6 +8,7 @@ import db from './database.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { nearbyCities } from './regions.js';
 
 dotenv.config();
 
@@ -300,35 +301,15 @@ app.post('/api/admin/users/:id/approve', requireAuth('admin'), (req, res) => {
 
 // â”€â”€ GET /api/admin/stats â€” mode-aware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/admin/stats', requireAuth('admin'), (req, res) => {
-  // DEMO MODE â€” frozen snapshot from data.json
-  if (req.user.mode === 'demo') {
-    try {
-      const data = JSON.parse(fs.readFileSync('./data.json', 'utf8'));
-      return res.json({
-        mode: 'demo',
-        vendors:      data.kpis.num_vendors,
-        suppliers:    data.suppliers.length,
-        products:     data.kpis.num_products,
-        transactions: data.kpis.total_transactions,
-        pendingUsers: 0,
-        revenue:      data.kpis.total_revenue,
-        byCity:       data.vendors_by_city.map(c => ({ label: c.city,  value: c.count })),
-        byType:       data.vendors_by_type.map(t => ({ label: t.type, value: t.count }))
-      });
-    } catch (e) {
-      return res.status(500).json({ error: 'demo data missing', detail: e.message });
-    }
-  }
-
-  // LIVE MODE â€” real DB counts
-  const vendors      = db.prepare("SELECT COUNT(*) AS n FROM vendors WHERE mode = 'live'").get().n;
-  const suppliers    = db.prepare("SELECT COUNT(*) AS n FROM suppliers WHERE mode = 'live'").get().n;
+  // Always return real DB counts (merged — no mode split)
+  const vendors      = db.prepare('SELECT COUNT(*) AS n FROM vendors').get().n;
+  const suppliers    = db.prepare('SELECT COUNT(*) AS n FROM suppliers').get().n;
   const products     = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
   const transactions = db.prepare('SELECT COUNT(*) AS n FROM sales_log').get().n;
   const pendingUsers = db.prepare('SELECT COUNT(*) AS n FROM users WHERE approved = 0').get().n;
-  const revenue      = db.prepare("SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors WHERE mode = 'live'").get().r;
-  const byCity       = db.prepare("SELECT city AS label, COUNT(*) AS value FROM vendors WHERE mode = 'live' GROUP BY city ORDER BY value DESC").all();
-  const byType       = db.prepare("SELECT type AS label, COUNT(*) AS value FROM vendors WHERE mode = 'live' GROUP BY type ORDER BY value DESC").all();
+  const revenue      = db.prepare('SELECT COALESCE(SUM(revenue), 0) AS r FROM vendors').get().r;
+  const byCity       = db.prepare('SELECT city AS label, COUNT(*) AS value FROM vendors GROUP BY city ORDER BY value DESC').all();
+  const byType       = db.prepare('SELECT type AS label, COUNT(*) AS value FROM vendors GROUP BY type ORDER BY value DESC').all();
 
   res.json({ mode: 'live', vendors, suppliers, products, transactions, pendingUsers, revenue, byCity, byType });
 });
@@ -351,9 +332,44 @@ app.delete('/api/admin/users/:id', requireAuth('admin'), (req, res) => {
 
 /* ==================== VENDOR'S OWN PRODUCTS ==================== */
 
+// ── Suppliers matching this vendor's type ─────────────────────
+app.get('/api/vendors/me/suppliers', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+  const vendor = db.prepare('SELECT type FROM vendors WHERE id = ?').get(vendorId);
+  if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+  // Map vendor type → product categories (matches categoriesForVendorType)
+  const TYPE_CATS = {
+    'Food Vendor':      ['Street Foods', 'Fast Food'],
+    'Drink Vendor':     ['Beverages'],
+    'Snack Vendor':     ['Snacks'],
+    'Sweet Vendor':     ['Street Sweets'],
+    'General Vendor':   ['Street Essentials', 'Personal Care'],
+    'Accessory Vendor': ['Street Accessories', 'Mobile Accessories'],
+    'Fruit Vendor':     ['Fresh Produce']
+  };
+  const cats = TYPE_CATS[vendor.type] || [];
+  if (cats.length === 0) return res.json([]);
+
+  const placeholders = cats.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT DISTINCT s.id, s.name, s.city, s.category,
+           s.rating, s.on_time, s.quality, s.status, s.lead_time
+    FROM suppliers s
+    WHERE s.category IN (${placeholders})
+    ORDER BY s.rating DESC
+  `).all(...cats);
+
+  res.json(rows);
+});
+
 app.get('/api/vendors/me/products', requireAuth('vendor'), (req, res) => {
   const vendorId = req.user.vendorId;
   if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+
 
   const rows = db.prepare(`
     SELECT p.id, p.name, p.category, p.unit_price,
@@ -474,16 +490,16 @@ app.get('/api/vendor-types', (req, res) => {
 
 app.get('/api/vendors', requireAuth('admin'), (req, res) => {
   const { search } = req.query;
-  const mode = req.user.mode || 'live';
-  let sql = 'SELECT * FROM vendors WHERE mode = ?';
-  const params = [mode];
+  let sql = 'SELECT * FROM vendors';
+  const params = [];
   if (search){
-    sql += ' AND (id LIKE ? OR city LIKE ? OR type LIKE ?)';
+    sql += ' WHERE id LIKE ? OR city LIKE ? OR type LIKE ?';
     params.push('%' + search + '%', '%' + search + '%', '%' + search + '%');
   }
   sql += ' ORDER BY revenue DESC';
   res.json(db.prepare(sql).all(...params));
 });
+
 
 app.get('/api/vendors-by-city', (req, res) => {
   res.json(db.prepare('SELECT city, COUNT(*) AS count FROM vendors GROUP BY city ORDER BY count DESC').all());
@@ -544,11 +560,9 @@ app.get('/api/vendors/me/stats', requireAuth('vendor'), (req, res) => {
 /* ==================== SUPPLIERS ==================== */
 
 app.get('/api/suppliers', requireAuth('admin'), (req, res) => {
-  const mode = req.user.mode || 'live';
-  res.json(
-    db.prepare('SELECT * FROM suppliers WHERE mode = ? ORDER BY rating DESC').all(mode)
-  );
+  res.json(db.prepare('SELECT * FROM suppliers ORDER BY rating DESC').all());
 });
+
 
 app.get('/api/suppliers/list', (req, res) => {
   res.json(db.prepare('SELECT id, name, city, category FROM suppliers ORDER BY name').all());
@@ -1221,6 +1235,110 @@ app.get('/api/health', (req, res) => {
 /* ==================== START ==================== */
 // ---- Phase 1: multi-day weather-aware prediction ----
 installHorizonRoutes(app, db, requireAuth, ML_SERVICE);
+
+
+/* ==================== PER-PRODUCT SALES TREND ==================== */
+app.get('/api/vendors/me/sales-trend-by-product', requireAuth('vendor'), (req, res) => {
+  const vendorId = req.user.vendorId;
+  if (!vendorId) return res.status(404).json({ error: 'Not linked to a vendor' });
+
+  const days = Math.max(7, Math.min(365, parseInt(req.query.days, 10) || 90));
+  const email = req.user.email;
+
+  // Get this vendor's catalog
+  const catalog = db.prepare(`
+    SELECT p.id, p.name, p.category
+    FROM vendor_products vp
+    JOIN products p ON p.id = vp.product_id
+    WHERE vp.vendor_id = ?
+  `).all(vendorId);
+
+  if (catalog.length === 0) {
+    return res.json({ dates: [], series: [], weather: [] });
+  }
+
+  // Build week buckets over the range
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+  const start = new Date(now);
+  start.setDate(now.getDate() - days);
+  start.setHours(0, 0, 0, 0);
+
+  const buckets = [];
+  const bucketDates = [];
+  let cursor = new Date(start);
+  while (cursor <= now) {
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(cursor.getDate() + 6);
+    bucketDates.push(cursor.toISOString().slice(0, 10));
+    buckets.push({
+      start: cursor.toISOString().slice(0, 10),
+      end: weekEnd.toISOString().slice(0, 10),
+      startDate: new Date(cursor),
+      endDate: new Date(weekEnd)
+    });
+    cursor = new Date(weekEnd);
+    cursor.setDate(weekEnd.getDate() + 1);
+  }
+
+  // For each product, sum sales per bucket (using both demo and live rows)
+  // Demo rows use demo+<vendorId>@streetsmart.local; live rows use user email.
+  const demoEmail = 'demo+' + vendorId + '@streetsmart.local';
+
+  const series = catalog.map(p => {
+    const values = buckets.map(b => {
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(quantity), 0) AS units
+        FROM sales_log
+        WHERE product_id = ?
+          AND sold_at >= ?
+          AND sold_at < ?
+          AND (sold_by = ? OR sold_by = ?)
+      `).get(p.id, b.start, b.end + ' 23:59:59', email, demoEmail);
+      return row.units || 0;
+    });
+    return {
+      product_id: p.id,
+      name: p.name,
+      category: p.category,
+      values
+    };
+  });
+
+  // ── Regional comparison (avg across nearby cities) ──────────
+  const vendorCity = db.prepare('SELECT city FROM vendors WHERE id = ?').get(vendorId)?.city;
+  const nearby = vendorCity ? nearbyCities(vendorCity) : [];
+
+  const seriesWithRegional = series.map(s => {
+    if (nearby.length === 0) {
+      return { ...s, mine: s.values, regional: s.values };
+    }
+    const placeholders = nearby.map(() => '?').join(',');
+    const regionalValues = buckets.map(b => {
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(s.quantity), 0) AS total, COUNT(DISTINCT v.id) AS cities
+        FROM sales_log s
+        JOIN vendors v ON 'demo+' || v.id || '@streetsmart.local' = s.sold_by
+        WHERE s.product_id = ?
+          AND v.city IN (${placeholders})
+          AND s.sold_at >= ?
+          AND s.sold_at < ?
+      `).get(s.product_id, ...nearby, b.start, b.end + ' 23:59:59');
+      const cities = row.cities || 1;
+      return Math.round((row.total || 0) / Math.max(1, cities));
+    });
+    return { ...s, mine: s.values, regional: regionalValues };
+  });
+
+  res.json({
+    dates: bucketDates,
+    series: seriesWithRegional,
+    days,
+    vendorCity,
+    nearbyCities: nearby
+  });
+});
+
 
 app.listen(PORT, () => {
   console.log(`\nÃ°Å¸Å¡â‚¬ StreetSmart API at http://localhost:${PORT}`);
